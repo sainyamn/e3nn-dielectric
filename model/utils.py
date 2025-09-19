@@ -141,15 +141,28 @@ def get_edge_relative_vectors(
 
 
 def create_directory_with_random_name(prefix=None):
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
+    # Generate timestamp with hyphens instead of colons for Windows compatibility
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     random_name = get_random_name(
         separator="-", style="lowercase", combo=[ADJECTIVES, NAMES]
     )
 
+    # Create base name components
+    components = [timestamp]
+    
+    # Add prefix if provided, ensuring no colons
     if prefix is not None:
-        name = f"{timestamp}-{prefix}-{random_name}"
-    else:
-        name = f"{timestamp}-{random_name}"
+        safe_prefix = str(prefix).replace(':', '-')
+        components.append(safe_prefix)
+    
+    # Add random name
+    components.append(random_name)
+    
+    # Join components with hyphens
+    name = "-".join(components)
+    
+    # Final safety check for any remaining colons
+    name = name.replace(':', '-')
 
     if os.path.exists(name):
         raise RuntimeError(f"{name} already exists")

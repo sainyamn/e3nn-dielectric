@@ -25,7 +25,7 @@ from jax.nn import initializers
 from jax import tree_util
 from jax import jit
 from jax import vmap
-from jax import tree_map
+from jax.tree_util import tree_map
 
 
 import operator

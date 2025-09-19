@@ -28,7 +28,7 @@ from jax.nn import initializers
 from jax import tree_util
 from jax import jit
 from jax import vmap
-from jax import tree_map
+from jax.tree_util import tree_map
 
 
 import operator
@@ -196,6 +196,9 @@ class NequIPConvolution(hk.Module):
         # note that this order is assumed by the gate function later, i.e.
         # scalars left, then gate scalar, then non-scalars
         h_out_irreps = irreps_scalars + irreps_gate_scalars + irreps_nonscalars
+        
+        # Debug print to check the computed irreps
+        print(f"Computed h_out_irreps: {h_out_irreps}")
 
         # self-connection: TP between node features and node attributes
         # this can equivalently be seen as a matrix multiplication acting on
@@ -205,16 +208,19 @@ class NequIPConvolution(hk.Module):
         
         #print('check irreps',h_out_irreps,node_features.irreps,node_attributes.irreps)
         
-        if self.use_sc:
-            self_connection = FullyConnectedTensorProduct(h_out_irreps)(node_features, node_attributes)
-
         h = node_features
-
-        # first linear, stays in current h-space
+        
+        # First linear, stays in current h-space
         h = Linear(node_features.irreps)(h)
+        
+        # Store the initial node features and attributes for the self-connection
+        if self.use_sc:
+            # Store the initial features and attributes for the self-connection
+            self._initial_node_features = node_features
+            self._initial_node_attributes = node_attributes
 
         # map node features onto edges for tp
-        edge_features = jax.tree_map(lambda x: x[edge_src], h)
+        edge_features = jax.tree_util.tree_map(lambda x: x[edge_src], h)
 
         # we gather the instructions for the tp as well as the tp output irreps
         mode = 'uvu'
@@ -292,27 +298,39 @@ class NequIPConvolution(hk.Module):
         edge_features = jax.vmap(tp.left_right)(weight, edge_features, edge_sh)
         # TODO: It's not great that e3nn_jax automatically upcasts internally,
         # but this would need to be fixed at the e3nn level.
-        edge_features = jax.tree_map(lambda x: x.astype(h.dtype), edge_features)
+        edge_features = jax.tree_util.tree_map(lambda x: x.astype(h.dtype), edge_features)
 
         # aggregate edges onto nodes after tp using e3nn-jax's index_add
         h_type = h.dtype
-        h = jax.tree_map(
+        h = jax.tree_util.tree_map(
             lambda x: e3nn.index_add(edge_dst, x, out_dim=h.shape[0]),
             edge_features
         )
         # TODO: Remove this once e3nn_jax doesn't upcast inputs.
-        h = jax.tree_map(lambda x: x.astype(h_type), h)
+        h = jax.tree_util.tree_map(lambda x: x.astype(h_type), h)
 
         # normalize by the average (not local) number of neighbors
         h = h / self.avg_num_neighbors
 
         # second linear, now we create extra gate scalars by mapping to h-out
         h = Linear(h_out_irreps)(h)
-
-        # self-connection, similar to a resnet-update that sums the output from
-        # the TP to chemistry-weighted h
-        if self.use_sc:
-            h = h + self_connection
+        
+        # Debug print to check irreps before addition
+        print(f"h irreps before addition: {h.irreps}")
+        
+        if self.use_sc and hasattr(self, '_initial_node_features'):
+            # Create a self-connection using FullyConnectedTensorProduct for proper equivariance
+            print(f"Adding self-connection with target irreps: {h.irreps}")
+            
+            # Use FullyConnectedTensorProduct to ensure proper equivariance
+            self_connection = FullyConnectedTensorProduct(h.irreps)(
+                self._initial_node_features,
+                self._initial_node_attributes
+            )
+            
+            # Add the self-connection with a small scaling factor for stability
+            residual_scale = 0.1
+            h = h + residual_scale * self_connection
 
         # gate nonlinearity, applied to gate data, consisting of:
         # a) regular scalars,
@@ -329,7 +347,7 @@ class NequIPConvolution(hk.Module):
 
         h = gate_fn(h)
         # TODO: Remove this once e3nn_jax doesn't upcast inputs.
-        h = jax.tree_map(lambda x: x.astype(h_type), h)
+        h = jax.tree_util.tree_map(lambda x: x.astype(h_type), h)
 
         return h
 
