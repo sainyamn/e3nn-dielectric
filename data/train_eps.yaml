@@ -26,14 +26,14 @@ model:
   avg_num_neighbors: average
 
 training:
-  learning_rate: 0.005
+  learning_rate: 0.004
   steps_per_interval: 500
-  max_num_intervals: 30
+  max_num_intervals: 2
   ema_decay: 0.99
   patience: 3000
-  becs_weight: 0.0
+  becs_weight: 5.0
   becs_sum_weight: 0.0
-  eps_weight: 5.0
+  eps_weight: 0.0
 
 
 initialization:
