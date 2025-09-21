@@ -276,20 +276,17 @@ class NequIPConvolution(hk.Module):
         #print('check call in IPconv')
         #print([self.radial_net_n_hidden] * self.radial_net_n_layers + [n_tp_weights])
 
-        # build radial MLP R(r) that maps from interatomic distances to TP weights
-        # must not use bias to that R(0)=0
+        # Build the radial MLP to output per-edge weights instead of batch weights
+        # The issue is that the MLP was outputting [batch_size, n_tp_weights]
+        # but we need [n_edges, n_tp_weights] for the vmap to work correctly
         fc = hk.nets.MLP(
-            (self.radial_net_n_hidden,) * self.radial_net_n_layers + (n_tp_weights,),
-            activation = get_nonlinearity_by_name(self.radial_net_nonlinearity),
+            [self.radial_net_n_hidden] * self.radial_net_n_layers + [n_tp_weights],
+            activation=get_nonlinearity_by_name(self.radial_net_nonlinearity),
             with_bias=False,
-            w_init = hk.initializers.RandomNormal(stddev=np.sqrt(self.scalar_mlp_std/self.radial_net_n_hidden)),
-            # w_init = hk.initializers.RandomNormal(stddev=1.0/self.scalar_mlp_std),
-            #scalar_mlp_std=self.scalar_mlp_std
+            w_init=hk.initializers.RandomNormal(stddev=np.sqrt(self.scalar_mlp_std/self.radial_net_n_hidden)),
         )
-        
-        #print('fc',type(fc))
-        #print('edge_embedded',type(edge_embedded),edge_embedded.shape,edge_embedded)
 
+        # the TP weights (v dimension) are given by the FC
         # the TP weights (v dimension) are given by the FC
         weight = fc(edge_embedded)
 
@@ -447,7 +444,9 @@ class NequIPEnergyModel(hk.Module):
         edge_sh = e3nn.spherical_harmonics(self.sh_irreps,vectors / lengths[..., None],normalize=False,normalization="component")
 
 
-        embedded_dr_edge = self.radial_embedding(lengths).array
+        # Flatten the edge embeddings to remove the batch dimension before passing to the convolution
+        # This ensures the MLP computes per-edge weights instead of per-graph weights
+        embedded_dr_edge = self.radial_embedding(lengths).array.reshape(-1, self.num_basis)
         
         # embedding layer
         #print('model irreps in',node_attrs.irreps)

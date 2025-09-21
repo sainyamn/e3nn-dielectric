@@ -316,8 +316,12 @@ class BECS_EPS_nequip_base_Model(hk.Module):
         
         # Denoising prediction (for auxiliary loss)
         h_node_denoising = Linear(irreps_out=Irreps('1x1o'))(h_node).array
-        
-        return bec_tensors, eps_tensor, h_node_denoising, bec_decomposition
+
+        # Only return bec_decomposition if not forced symmetric
+        if not self.force_symmetric_bec:
+            return bec_tensors, eps_tensor, h_node_denoising, bec_decomposition
+        else:
+            return bec_tensors, eps_tensor, h_node_denoising, None
 
 
 def BECS_EPS_model(
@@ -442,6 +446,11 @@ def BECS_EPS_model(
             force_symmetric_bec=force_symmetric_bec,
         )
     )
+    # Ensure required kwargs for BECS_EPS_nequip_base_Model are present
+    if 'use_sc' not in kwargs:
+        kwargs['use_sc'] = True
+    if 'nonlinearities' not in kwargs:
+        kwargs['nonlinearities'] = {'e': 'swish', 'o': 'tanh'}
     
     symmetry_info = "symmetric" if force_symmetric_bec else "asymmetric"
     print(f"Create BECS/EPS (NequIP-based) model with {symmetry_info} BEC tensors and parameters {kwargs}")

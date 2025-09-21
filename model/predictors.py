@@ -108,8 +108,8 @@ def predict_becs_eps(
             vectors, graph.nodes.species, graph.senders, graph.receivers
         )  # [n_nodes, ]
         return h_node_becs
-    
-    node_becs, node_eps, node_denoising = model_fn(graph.nodes.positions, graph.globals.cell)
+
+    node_becs, node_eps, node_denoising, bec_decomposition = model_fn(graph.nodes.positions, graph.globals.cell)
     node_becs_sum = e3nn.scatter_sum(node_becs, nel=graph.n_node)
     node_becs_avg = _safe_divide(node_becs_sum , jnp.expand_dims(jnp.expand_dims(graph.n_node,axis=-1),axis=-1))
     node_becs_avg_repeat = jnp.repeat(node_becs_avg,repeats = graph.n_node,axis=0,total_repeat_length=graph.nodes.positions.shape[0])
